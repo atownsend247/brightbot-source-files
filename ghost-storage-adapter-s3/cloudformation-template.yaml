@@ -123,3 +123,8 @@ Resources:
       Tags:
         - Key: Project
           Value: !Ref Project
+
+Output:
+  StorageDistributionUrl:
+    Description: The Created CloudFront Distribution URL or assetHost
+    Value: !GetAtt StorageDistribution.DomainName
