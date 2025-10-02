@@ -1,0 +1,33 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Provides the required AWS resources for ghost-storage-adapter-s3
+
+Parameters:
+  Project:
+    Description: Project name prefix for the Stack
+    Type: String
+    Default: brightbot-content-certificate
+  DomainName:
+    Description: The project domain name to create certificate for
+    Type: String
+    Default: content.brightbot.co.uk
+  HostedZoneId:
+    Description: The hosted zone of your route53 dns zone
+    Type: String
+
+Resources:
+  ACMCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+      ValidationMethod: DNS
+
+Outputs:
+  CertificateArn:
+    Description: ACM Issued certificate
+    Value: !Ref ACMCertificate
+    Export:
+      Name: !Sub "acm-${AWS::Region}-${Project}"
