@@ -1,0 +1,125 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Provides the required AWS resources for ghost-storage-adapter-s3
+
+Parameters:
+  Project:
+    Description: Project name prefix for the Stack
+    Type: String
+    Default: brightbot-ghost-storage
+
+Resources:
+
+  CloudFrontCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Comment: "Default expire objects after 24 hours"
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 28800
+        Name: !Sub "24-hour-expiry-static-content"
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: "none"
+          EnableAcceptEncodingBrotli: false
+          EnableAcceptEncodingGzip: false
+          HeadersConfig:
+            HeaderBehavior: "none"
+          QueryStringsConfig:
+            QueryStringBehavior: "none"
+  
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Description: !Sub Origin Access Control for ${Project}
+        Name: !Sub ${Project}-OAC
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  S3StorageBucket:
+    Type: "AWS::S3::Bucket"
+    # UpdateReplacePolicy: Retain
+    # DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub ${Project}-bucket
+      Tags:
+        - Key: Project
+          Value: !Sub ${Project}
+
+  GhostStorageUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub "${Project}-user"
+
+  GhostStorageUserPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Sid: S3BucketAccess
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub "arn:aws:s3:::${Project}-bucket"
+          - Sid: S3WriteAccess
+            Effect: Allow
+            Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:PutObjectVersionAcl
+            - s3:DeleteObject
+            - s3:PutObjectAcl
+            Resource: !Sub "arn:aws:s3:::${Project}-bucket/*"
+      PolicyName: !Sub "${Project}-user-policy"
+      Users:
+        - !Ref GhostStorageUser
+
+  S3StorageBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket:
+        !Ref S3StorageBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${S3StorageBucket}/*"
+            Condition:
+              ArnLike:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${StorageDistribution}"
+                
+  StorageDistribution:
+    Type: "AWS::CloudFront::Distribution"
+    Properties:
+      DistributionConfig:
+        Comment: !Sub "${Project} asset distribution"
+        HttpVersion: http2
+        Origins:
+          - OriginPath: ''
+            Id: !Sub "${Project}-origin"
+            OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            DomainName: !GetAtt S3StorageBucket.RegionalDomainName
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_All
+        Enabled: true
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: !Ref CloudFrontCachePolicy
+          Compress: true
+          TargetOriginId: !Sub "${Project}-origin"
+          ViewerProtocolPolicy: redirect-to-https
+      Tags:
+        - Key: Project
+          Value: !Ref Project
